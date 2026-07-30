@@ -1,20 +1,37 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import styles from "./page.module.css";
 import { ROOM_TYPES, PPF, nextRoomId, DEFAULT_CATEGORIES } from "./presets";
 import { CategoryMap, CategoryPlan, Floor, RoomElement, RoomType } from "./types";
+import { loadPlanState, savePlanState, clearPlanState } from "./planStorage";
 
 const PLOT_PADDING = 20;
 
 export default function PlanStudioPage() {
-  const [categories, setCategories] = useState<CategoryMap>(() =>
-    JSON.parse(JSON.stringify(DEFAULT_CATEGORIES))
-  );
-  const [currentCategoryKey, setCurrentCategoryKey] = useState<string>("villa");
-  const [currentFloorIdx, setCurrentFloorIdx] = useState<number>(0);
+  const router = useRouter();
+
+  // hydrate from a previously saved session if one exists, otherwise start fresh
+  const [categories, setCategories] = useState<CategoryMap>(() => {
+    const saved = loadPlanState();
+    return saved ? saved.categories : JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
+  });
+  const [currentCategoryKey, setCurrentCategoryKey] = useState<string>(() => {
+    const saved = loadPlanState();
+    return saved ? saved.currentCategoryKey : "villa";
+  });
+  const [currentFloorIdx, setCurrentFloorIdx] = useState<number>(() => {
+    const saved = loadPlanState();
+    return saved ? saved.currentFloorIdx : 0;
+  });
   const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
+
+  // persist on every change so the 3D page (and a future revisit) sees the latest edits
+  useEffect(() => {
+    savePlanState(categories, currentCategoryKey, currentFloorIdx);
+  }, [categories, currentCategoryKey, currentFloorIdx]);
 
   const currentCategory: CategoryPlan = categories[currentCategoryKey];
   const currentFloor: Floor = currentCategory.floors[currentFloorIdx];
@@ -103,6 +120,34 @@ export default function PlanStudioPage() {
     setCurrentCategoryKey(key);
     setCurrentFloorIdx(0);
     setSelectedRoomId(null);
+  }
+
+  function resetCurrentCategory() {
+    const ok = window.confirm(
+      `Reset "${currentCategory.name}" back to its default layout? Your edits to this category will be lost.`
+    );
+    if (!ok) return;
+    setCategories((prev) => ({
+      ...prev,
+      [currentCategoryKey]: JSON.parse(JSON.stringify(DEFAULT_CATEGORIES[currentCategoryKey])),
+    }));
+    setCurrentFloorIdx(0);
+    setSelectedRoomId(null);
+  }
+
+  function resetEverything() {
+    const ok = window.confirm("Reset ALL categories back to their default layouts?");
+    if (!ok) return;
+    setCategories(JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)));
+    clearPlanState();
+    setCurrentCategoryKey("villa");
+    setCurrentFloorIdx(0);
+    setSelectedRoomId(null);
+  }
+
+  function goTo3D() {
+    savePlanState(categories, currentCategoryKey, currentFloorIdx);
+    router.push("/plan-studio/3d");
   }
 
   /* ---------- drag to move ---------- */
@@ -262,6 +307,18 @@ export default function PlanStudioPage() {
                 + Add Floor
               </div>
             </div>
+          </div>
+
+          <div className={styles.actionBar}>
+            <button className={styles.ghostBtn} onClick={resetCurrentCategory}>
+              ↺ Reset This Design
+            </button>
+            <button className={styles.ghostBtnMuted} onClick={resetEverything}>
+              Reset All Categories
+            </button>
+            <button className={styles.primaryBtn} onClick={goTo3D}>
+              Show My Plan in 3D →
+            </button>
           </div>
 
           <div
